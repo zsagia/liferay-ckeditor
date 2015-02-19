@@ -306,6 +306,8 @@
 					data = this.editor.dataProcessor.toHtml( data );
 
 				this.setHtml( data );
+				this.fixInitialSelection();
+
 				this.editor.fire( 'dataReady' );
 			},
 
@@ -355,6 +357,88 @@
 			 */
 			isInline : function () {
 				return this.getDocument().equals( CKEDITOR.document );
+			},
+
+			fixInitialSelection: function() {
+				var that = this;
+
+				// Deal with IE8- (the old MS selection) first.
+				if ( CKEDITOR.env.ie && CKEDITOR.env.version < 9 ) {
+					if ( this.hasFocus ) {
+						this.focus();
+						fixMSSelection();
+					}
+
+					return;
+				}
+
+				// If editable did not have focus, fix the selection when it is first focused.
+				if ( !this.hasFocus ) {
+					this.once( 'focus', function() {
+						fixSelection();
+					}, null, null, -999 );
+				// If editable had focus, fix the selection immediately.
+				} else {
+					this.focus();
+					fixSelection();
+				}
+
+				function fixSelection() {
+					var $doc = that.getDocument().$,
+						$sel = $doc.getSelection();
+
+					if ( requiresFix( $sel ) ) {
+						var range = new CKEDITOR.dom.range( that );
+						range.moveToElementEditStart( that );
+
+						var $range = $doc.createRange();
+						$range.setStart( range.startContainer.$, range.startOffset );
+						$range.collapse( true );
+
+						$sel.removeAllRanges();
+						$sel.addRange( $range );
+					}
+				}
+
+				function requiresFix( $sel ) {
+					// This condition covers most broken cases after setting data.
+					if ( $sel.anchorNode && $sel.anchorNode == that.$ ) {
+						return true;
+					}
+
+					// Fix for:
+					// http://tests.ckeditor.dev:1030/tests/core/selection/manual/focusaftersettingdata
+					// (the inline editor TC)
+					if ( CKEDITOR.env.webkit ) {
+						var active = that.getDocument().getActive();
+						if ( active && active.equals( that ) && !$sel.anchorNode ) {
+							return true;
+						}
+					}
+				}
+
+				function fixMSSelection() {
+					var $doc = that.getDocument().$,
+						$sel = $doc.selection,
+						active = that.getDocument().getActive();
+
+					if ( $sel.type == 'None' && active.equals( that ) ) {
+						var range = new CKEDITOR.dom.range( that ),
+							parentElement,
+							$range = $doc.body.createTextRange();
+
+						range.moveToElementEditStart( that );
+
+						parentElement = range.startContainer;
+						if ( parentElement.type != CKEDITOR.NODE_ELEMENT ) {
+							parentElement = parentElement.getParent();
+						}
+
+						$range.moveToElementText( parentElement.$ );
+						$range.collapse( true );
+						$range.select();
+					}
+				}
 			},
 
 			/**

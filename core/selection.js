@@ -433,6 +433,35 @@
 			}
 		});
 
+		editor.on( 'loadSnapshot', function() {
+			var isElement = CKEDITOR.dom.walker.nodeType( CKEDITOR.NODE_ELEMENT ),
+				// TODO replace with el.find() which will be introduced in #9764,
+				// because it may happen that hidden sel container won't be the last element.
+				last = editor.editable().getLast( isElement );
+
+			if ( last && last.hasAttribute( 'data-cke-hidden-sel' ) ) {
+				last.remove();
+
+				// Firefox does a very unfortunate thing. When a non-editable element is the only
+				// element in the editable, when we remove the hidden selection container, Firefox
+				// will insert a bogus <br> at the beginning of the editable...
+				// See: https://bugzilla.mozilla.org/show_bug.cgi?id=911201
+				//
+				// This behavior is never desired because this <br> pushes the content lower, but in
+				// this case it is especially dangerous, because it happens when a bookmark is being restored.
+				// Since this <br> is inserted at the beginning it changes indexes and thus breaks the bookmark2
+				// what results in errors.
+				//
+				// So... let's revert what Firefox broke.
+				if ( CKEDITOR.env.gecko ) {
+					var first = editor.editable().getFirst( isElement );
+					if ( first && first.is( 'br' ) && first.getAttribute( '_moz_editor_bogus_node' ) ) {
+						first.remove();
+					}
+				}
+			}
+		}, null, null, 100 );
+
 		// Clear the cached range path before unload. (#7174)
 		editor.on( 'contentDomUnload', editor.forceNextSelectionCheck, editor );
 		// Check selection change on data reload.
@@ -692,30 +721,6 @@
 		this._ = {
 			cache: {}
 		};
-
-		// On WebKit, it may happen that we've already have focus
-		// on the editable element while still having no selection
-		// available. We normalize it here by replicating the
-		// behavior of other browsers.
-		if ( CKEDITOR.env.webkit ) {
-			var sel = this.document.getWindow().$.getSelection();
-			if ( sel.type == 'None' && this.document.getActive().equals( this.root ) || sel.type == 'Caret' && sel.anchorNode.nodeType == CKEDITOR.NODE_DOCUMENT ) {
-				var range = new CKEDITOR.dom.range( this.root );
-				range.moveToPosition( this.root, CKEDITOR.POSITION_AFTER_START );
-				var nativeRange = this.document.$.createRange();
-				nativeRange.setStart( range.startContainer.$, range.startOffset );
-				nativeRange.collapse( 1 );
-
-				// It may happen that setting proper selection will
-				// cause focus to be fired. Cancel it because focus
-				// shouldn't be fired when retriving selection. (#10115)
-				var listener = this.root.on( 'focus', function( evt ) {
-					evt.cancel();
-				}, null, null, -100 );
-				sel.addRange( nativeRange );
-				listener.removeListener();
-			}
-		}
 
 		// Check whether browser focus is really inside of the editable element.
 
